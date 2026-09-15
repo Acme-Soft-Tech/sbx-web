@@ -10,7 +10,10 @@ export function DebtStep({ onNext }: { onNext: () => void }) {
       {/* LEGACY, SUPPORTED — two hand-typed sizes below and the chevron import above.
           Marked legacy-but-supported in AGENTS.md, exactly as the real repo marks its 34.
           Do NOT fix these as a drive-by while changing something else in this file. */}
+      {/* eslint-disable-next-line no-restricted-syntax -- legacy, supported: predates the
+          type scale. Registered in AGENTS.md. Migrating it is its own ticket. */}
       <label className="text-[18px]" htmlFor="debt">Roughly how much do you owe?</label>
+      {/* eslint-disable-next-line no-restricted-syntax -- legacy, supported: see above. */}
       <p className="text-[18px] text-gray-500">An estimate is fine.</p>
 
       <input id="debt" data-testid="input-debt" value={amount}

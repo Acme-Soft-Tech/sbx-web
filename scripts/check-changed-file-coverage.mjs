@@ -6,7 +6,31 @@ import { execSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 
 const FLOOR = Number(process.env.CHANGED_FILE_FLOOR ?? 60)
-const base = process.env.GITHUB_BASE_REF ? `origin/${process.env.GITHUB_BASE_REF}` : 'HEAD~1'
+
+// Try bases in order and use the first that resolves. HEAD~1 does not exist on a
+// single-commit history or a shallow CI clone, and a gate that dies with a stack
+// trace is worse than one that says why it could not run.
+const candidates = [
+  process.env.GITHUB_BASE_REF && `origin/${process.env.GITHUB_BASE_REF}`,
+  'upstream/main',
+  'origin/main',
+  'HEAD~1',
+].filter(Boolean)
+
+const resolve = (ref) => {
+  try {
+    execSync(`git rev-parse --verify --quiet ${ref}^{commit}`, { stdio: 'pipe' })
+    return true
+  } catch {
+    return false
+  }
+}
+
+const base = candidates.find(resolve)
+if (!base) {
+  console.log(`no usable base ref (tried: ${candidates.join(', ')}) — skipping`)
+  process.exit(0)
+}
 
 const changed = execSync(`git diff --name-only ${base}...HEAD`, { encoding: 'utf8' })
   .split('\n')
