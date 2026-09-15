@@ -1,10 +1,13 @@
 name: deploy
 
-# NOT an empty placeholder. The real repo's deploy.yml is a 1-byte file, which reads like
-# a pipeline exists when none does — Stage 5 needs a real one or an honest absence.
+# Vercel's own Git integration already deploys every push to main, and every PR as
+# a preview. This workflow does NOT duplicate that — a second deploy path means two
+# sources of truth for what is live, and the one that is red is rarely the one that
+# shipped.
+#
+# What lives here is the thing Vercel cannot do: gate G5. A production release must
+# carry a named human authorisation, and its absence is the point.
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       environment:
@@ -15,15 +18,27 @@ on:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ${{ inputs.environment || 'preview' }}
+    environment: ${{ inputs.environment }}
+    env:
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: npm }
-      - run: npm ci
 
-      # Gate G5. A production deploy needs a named human authorisation; its absence
-      # is the point. The GitHub environment adds a second, server-side approval.
+      - name: Preflight
+        run: |
+          missing=
+          [ -n "${{ secrets.VERCEL_TOKEN }}" ] || missing="$missing VERCEL_TOKEN"
+          [ -n "$VERCEL_ORG_ID" ]              || missing="$missing VERCEL_ORG_ID"
+          [ -n "$VERCEL_PROJECT_ID" ]          || missing="$missing VERCEL_PROJECT_ID"
+          if [ -n "$missing" ]; then
+            echo "::error::missing secrets:$missing"
+            echo "Without project linkage the CLI cannot tell which project to deploy,"
+            echo "and prompts — which in CI reads as 'requires confirmation'."
+            exit 1
+          fi
+
+      # Gate G5. Held by a person, deliberately.
       - name: Release gate
         if: inputs.environment == 'production'
         env: { RELEASE_APPROVAL: "${{ vars.RELEASE_APPROVAL }}" }
@@ -33,4 +48,5 @@ jobs:
             exit 2; }
           echo "release authorised by: $RELEASE_APPROVAL"
 
-      - run: npx vercel deploy ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
+      # --yes is required in CI: without it the CLI asks for confirmation and exits 1.
+      - run: npx vercel deploy --yes ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
