@@ -1,0 +1,66 @@
+name: qa-gate
+
+# Gate G4 — acceptance. CLAUDE.md's gate table named this workflow as G4's enforcer
+# and it did not exist; the only acceptance runs were sbx-qa's own schedule and
+# pull_request, both against a SHARED url. So nothing ever tested a specific PR.
+#
+# deployment_status is the trigger that fixes that: Vercel posts one per preview
+# deploy, carrying target_url — the URL of THIS change. Nothing else in GitHub knows
+# that URL at the moment it becomes real.
+on:
+  deployment_status:
+
+jobs:
+  acceptance:
+    # Previews only. A production deployment_status must not trigger a suite that
+    # drives a funnel — and `environment` casing has changed on Vercel before, so
+    # match case-insensitively rather than on an exact string.
+    if: >-
+      github.event.deployment_status.state == 'success' &&
+      !contains(
+        fromJSON('["production","Production"]'),
+        github.event.deployment_status.environment
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Preflight — refuse to test nothing
+        env: { URL: "${{ github.event.deployment_status.target_url }}" }
+        run: |
+          test -n "$URL" || {
+            echo "::error::deployment_status carried no target_url — refusing to run"
+            echo "A suite pointed at an empty host reports green while testing nothing."
+            exit 1; }
+          echo "testing: $URL"
+
+      # The acceptance suite is a contract owned by sbx-qa, so it is checked out at
+      # main rather than vendored here. A web PR is tested against the CURRENT
+      # contract, which is the point of an acceptance gate.
+      - uses: actions/checkout@v4
+        with:
+          repository: Acme-Soft-Tech/sbx-qa
+          ref: main
+          path: qa
+
+      - uses: astral-sh/setup-uv@v3
+      - working-directory: qa
+        run: |
+          uv sync --frozen
+          uv run playwright install --with-deps chromium
+
+      - name: Acceptance subset against this PR's preview
+        working-directory: qa
+        env:
+          SBX_BASE_URL: ${{ github.event.deployment_status.target_url }}
+          # Never widened. e2e sends SMS; sms-guard.sh blocks an agent from widening
+          # this locally, and hardcoding it here means CI cannot drift either.
+          SBX_MARKERS: smoke or regression
+        run: |
+          uv run pytest -m "$SBX_MARKERS" \
+            --json-report --json-report-file=report.json
+
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acceptance-traces
+          path: qa/traces/
+          if-no-files-found: ignore
