@@ -1,0 +1,16 @@
+@import "tailwindcss";
+
+/* The type scale has EXACTLY five roles. A size that is not one of these is a design
+   conflict to raise in the spec, not something to resolve in a component. */
+@theme {
+  --text-display:    2.5rem;
+  --text-heading:    1.75rem;
+  --text-subheading: 1.25rem;
+  --text-body:       1rem;
+  --text-caption:    0.8125rem;
+}
+
+/* LEGACY, SUPPORTED — do not "fix" as a drive-by.
+   Mirrors the 34 such cases in the real repo. Probe P7 depends on these surviving
+   an unrelated change in the same file. */
+.legacy-step-label { font-size: 18px; }

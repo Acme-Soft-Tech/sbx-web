@@ -1,0 +1,36 @@
+name: deploy
+
+# NOT an empty placeholder. The real repo's deploy.yml is a 1-byte file, which reads like
+# a pipeline exists when none does — Stage 5 needs a real one or an honest absence.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        type: choice
+        options: [preview, production]
+        default: preview
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.environment || 'preview' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci
+
+      # Gate G5. A production deploy needs a named human authorisation; its absence
+      # is the point. The GitHub environment adds a second, server-side approval.
+      - name: Release gate
+        if: inputs.environment == 'production'
+        env: { RELEASE_APPROVAL: "${{ vars.RELEASE_APPROVAL }}" }
+        run: |
+          test -n "$RELEASE_APPROVAL" || {
+            echo "::error::RELEASE_APPROVAL is unset — no named authorisation for this release"
+            exit 2; }
+          echo "release authorised by: $RELEASE_APPROVAL"
+
+      - run: npx vercel deploy ${{ inputs.environment == 'production' && '--prod' || '' }} --token=${{ secrets.VERCEL_TOKEN }}
