@@ -36,4 +36,31 @@ describe('POST /api/otp', () => {
     const body = await (await post({ session_id: 's1' })).json()
     expect(JSON.stringify(body)).not.toContain('SECRET')
   })
+
+  it('emits analytics on the SUCCESS path', async () => {
+    captureServer.mockClear()
+    upstreamFetch.mockResolvedValue(new Response(JSON.stringify({ req_id: 'r1' }), { status: 200 }))
+
+    const res = await post({ session_id: 's1' })
+
+    expect(res.status).toBe(200)
+    expect(captureServer).toHaveBeenCalledWith(EVENTS.OTP_REQUEST_SUCCEEDED, { session_id: 's1' })
+  })
+
+  it('returns a generic 500 when upstream throws, leaking nothing', async () => {
+    upstreamFetch.mockRejectedValue(new Error('ECONNRESET to internal-host:5432'))
+
+    const res = await post({ session_id: 's1' })
+    const body = await res.json()
+
+    expect(res.status).toBe(500)
+    expect(JSON.stringify(body)).not.toContain('internal-host')
+  })
+
+  it('handles a malformed body without throwing', async () => {
+    // Covers the `.catch(() => null)` on req.json(). A client can always send
+    // garbage; a 500 here would be the handler's fault, not the caller's.
+    const res = await POST(new Request('http://x/api/otp', { method: 'POST', body: 'not json' }))
+    expect(res.status).toBe(400)
+  })
 })
